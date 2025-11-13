@@ -912,7 +912,7 @@ FEEDS_EOF
             echo "Unknown SDK version, skipping feeds.conf.default replacement"
           fi
 
-      - name: Initialize SDK environment
+      - name: Initialize SDK environment 
         if: steps.cache-sdk-extracted.outputs.cache-hit != 'true'
         run: |
           cd sdk
