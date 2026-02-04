@@ -13,7 +13,7 @@ jobs:
         include:
           - arch: x86_64
             target: x86/64
-            sdk_url: https://downloads.immortalwrt.org/releases/24.10.4/targets/x86/64/immortalwrt-sdk-24.10.4-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.xz
+            sdk_url: https://downloads.immortalwrt.org/releases/24.10.4/targets/x86/64/immortalwrt-sdk-24.10.4-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst
 
     steps:
       - name: Checkout Source
@@ -30,13 +30,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
-            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 qemu-utils
+            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 qemu-utils zstd
 
       - name: Setup SDK
         run: |
-          wget -O sdk.tar.xz "${{ matrix.sdk_url }}"
+          wget -O sdk.tar.zst "${{ matrix.sdk_url }}"
           mkdir sdk
-          tar -xJf sdk.tar.xz -C sdk --strip-components=1
+          tar --use-compress-program=zstd -xf sdk.tar.zst -C sdk --strip-components=1
           cd sdk
           
           # Update feeds
