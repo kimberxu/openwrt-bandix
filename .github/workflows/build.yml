@@ -14,9 +14,6 @@ jobs:
           - arch: x86_64
             target: x86/64
             sdk_url: https://downloads.immortalwrt.org/releases/24.10.4/targets/x86/64/immortalwrt-sdk-24.10.4-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.xz
-          - arch: armsr-armv8
-            target: armsr/armv8
-            sdk_url: https://downloads.immortalwrt.org/releases/24.10.4/targets/armsr/armv8/immortalwrt-sdk-24.10.4-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.xz
 
     steps:
       - name: Checkout Source
