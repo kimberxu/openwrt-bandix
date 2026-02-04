@@ -1,0 +1,137 @@
+--- a/bandix-ebpf/src/main.rs
++++ b/bandix-ebpf/src/main.rs
+@@ -10,6 +10,9 @@ use crate::utils::{is_dns_enabled, is_traffic_enabled};
+ use modules::dns::{handle_dns_egress, handle_dns_ingress};
+ use modules::traffic::{handle_traffic_egress, handle_traffic_ingress};
+ 
++#[no_mangle]
++pub static volatile IS_TUN: u8 = 0;
++
+ #[inline(always)]
+ fn process_module_result(result: Result<i32, ()>) -> Option<i32> {
+     match result {
+--- a/bandix-ebpf/src/modules/traffic/mod.rs
++++ b/bandix-ebpf/src/modules/traffic/mod.rs
+@@ -20,11 +20,18 @@ use maps::{MAC_RATE_LIMITS, MAC_TRAFFIC, RATE_BUCKETS};
+ 
+ #[inline(always)]
+ pub fn handle_traffic_ingress(ctx: &TcContext) -> Result<i32, ()> {
++    let is_tun = unsafe { core::ptr::read_volatile(&crate::IS_TUN) };
++    if is_tun == 1 {
++        let data: *const u8 = ptr_at(ctx, 0)?;
++        let version = unsafe { (*data) >> 4 };
++        return match version {
++            4 => handle_ipv4(ctx, true, 0),
++            6 => handle_ipv6(ctx, true, 0),
++            _ => Ok(TC_ACT_PIPE),
++        };
++    }
+     let ethhdr: *const EthHdr = ptr_at(ctx, 0)?;
+     let ethhdr_type = unsafe { (*ethhdr).ether_type };
+ 
+     match ethhdr_type {
+-        network_types::eth::EtherType::Ipv4 => handle_ipv4(ctx, true),
+-        network_types::eth::EtherType::Ipv6 => handle_ipv6(ctx, true),
++        network_types::eth::EtherType::Ipv4 => handle_ipv4(ctx, true, EthHdr::LEN),
++        network_types::eth::EtherType::Ipv6 => handle_ipv6(ctx, true, EthHdr::LEN),
+         _ => Ok(TC_ACT_PIPE),
+     }
+ }
+ 
+ #[inline(always)]
+ pub fn handle_traffic_egress(ctx: &TcContext) -> Result<i32, ()> {
++    let is_tun = unsafe { core::ptr::read_volatile(&crate::IS_TUN) };
++    if is_tun == 1 {
++        let data: *const u8 = ptr_at(ctx, 0)?;
++        let version = unsafe { (*data) >> 4 };
++        return match version {
++            4 => handle_ipv4(ctx, false, 0),
++            6 => handle_ipv6(ctx, false, 0),
++            _ => Ok(TC_ACT_PIPE),
++        };
++    }
+     let ethhdr: *const EthHdr = ptr_at(ctx, 0)?;
+     let ethhdr_type = unsafe { (*ethhdr).ether_type };
+ 
+     match ethhdr_type {
+-        network_types::eth::EtherType::Ipv4 => handle_ipv4(ctx, false),
+-        network_types::eth::EtherType::Ipv6 => handle_ipv6(ctx, false),
++        network_types::eth::EtherType::Ipv4 => handle_ipv4(ctx, false, EthHdr::LEN),
++        network_types::eth::EtherType::Ipv6 => handle_ipv6(ctx, false, EthHdr::LEN),
+         _ => Ok(TC_ACT_PIPE),
+     }
+ }
+ 
+ // ============================================================================
+ // IPv4 Handler
+ // ============================================================================
+ 
+ #[inline(always)]
+-fn handle_ipv4(ctx: &TcContext, is_ingress: bool) -> Result<i32, ()> {
+-    let ethhdr: *const EthHdr = ptr_at(ctx, 0)?;
+-    let src_mac = unsafe { (*ethhdr).src_addr };
+-    let dst_mac = unsafe { (*ethhdr).dst_addr };
++fn handle_ipv4(ctx: &TcContext, is_ingress: bool, offset: usize) -> Result<i32, ()> {
++    let (src_mac, dst_mac) = if offset == 0 {
++        ([0u8; 6], [0u8; 6])
++    } else {
++        let ethhdr: *const EthHdr = ptr_at(ctx, 0)?;
++        unsafe { ((*ethhdr).src_addr, (*ethhdr).dst_addr) }
++    };
+ 
+     // get ipv4 header
+-    let ipv4hdr: *const Ipv4Hdr = ptr_at(ctx, EthHdr::LEN)?;
++    let ipv4hdr: *const Ipv4Hdr = ptr_at(ctx, offset)?;
+     let data_len = unsafe { u16::from_be_bytes((*ipv4hdr).tot_len) } as u64;
+ 
+     // IP 地址
+@@ -107,11 +129,13 @@ fn is_subnet_configured() -> bool {
+ // ============================================================================
+ 
+ #[inline(always)]
+-fn handle_ipv6(ctx: &TcContext, is_ingress: bool) -> Result<i32, ()> {
+-    let ethhdr: *const EthHdr = ptr_at(ctx, 0)?;
+-    let src_mac = unsafe { (*ethhdr).src_addr };
+-    let dst_mac = unsafe { (*ethhdr).dst_addr };
++fn handle_ipv6(ctx: &TcContext, is_ingress: bool, offset: usize) -> Result<i32, ()> {
++    let (src_mac, dst_mac) = if offset == 0 {
++        ([0u8; 6], [0u8; 6])
++    } else {
++        let ethhdr: *const EthHdr = ptr_at(ctx, 0)?;
++        unsafe { ((*ethhdr).src_addr, (*ethhdr).dst_addr) }
++    };
+ 
+     // get ipv6 header
+-    let ipv6hdr: *const Ipv6Hdr = ptr_at(ctx, EthHdr::LEN)?;
++    let ipv6hdr: *const Ipv6Hdr = ptr_at(ctx, offset)?;
+     // IPv6 payload_len + IPv6 header size (40 bytes)
+     let payload_len = unsafe { u16::from_be_bytes((*ipv6hdr).payload_len) } as u64;
+--- a/bandix/src/command.rs
++++ b/bandix/src/command.rs
+@@ -34,6 +34,9 @@ pub struct CommonArgs {
+         help = "Log level: trace, debug, info, warn, error (default: info). Web and DNS logs are always at DEBUG level."
+     )]
+     pub log_level: String,
++
++    #[clap(long, help = "Enable TUN mode (skip Ethernet header)")]
++    pub tun: bool,
+ }
+ 
+ /// 流量模块参数
+@@ -299,6 +302,15 @@ async fn create_module_contexts(
+     let shared_ebpf = if options.enable_traffic() || options.enable_dns() {
+         log::info!("Loading shared eBPF programs (ingress and egress)...");
+         let mut ebpf = init_shared_ebpf(options).await?;
++        
++        if options.common.tun {
++            log::info!("Enabling TUN mode (skipping Ethernet header)...");
++            if let Some(map) = ebpf.take_map("IS_TUN") {
++                let mut arr = aya::maps::Array::<_, u8>::try_from(map)?;
++                arr.set(0, 1u8, 0)?;
++            } else {
++                log::warn!("Could not find IS_TUN map, TUN mode might not work");
++            }
++        }
+ 
+         // 如果启用了流量模块，则配置子网信息映射
+         if options.enable_traffic() {

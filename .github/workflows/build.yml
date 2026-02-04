@@ -1,0 +1,89 @@
+name: Build ImmortalWrt Package
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86/64
+            sdk_url: https://downloads.immortalwrt.org/releases/24.10.4/targets/x86/64/immortalwrt-sdk-24.10.4-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.xz
+          - arch: armsr-armv8
+            target: armsr/armv8
+            sdk_url: https://downloads.immortalwrt.org/releases/24.10.4/targets/armsr/armv8/immortalwrt-sdk-24.10.4-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.xz
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (Host)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          default: true
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
+            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 qemu-utils
+
+      - name: Setup SDK
+        run: |
+          wget -O sdk.tar.xz "${{ matrix.sdk_url }}"
+          mkdir sdk
+          tar -xJf sdk.tar.xz -C sdk --strip-components=1
+          cd sdk
+          
+          # Update feeds
+          ./scripts/feeds update -a
+          
+          # Install rust packages support (lang/rust) explicitly to ensure cargo.mk is available
+          ./scripts/feeds install rust
+          ./scripts/feeds install -a
+          
+      - name: Prepare Package
+        run: |
+          # Copy our package to SDK
+          # Assuming the repo structure is: root -> openwrt-bandix/ -> Makefile
+          cp -r openwrt-bandix sdk/package/
+          
+      - name: Compile Package
+        run: |
+          cd sdk
+          # Select the package
+          # We use make defconfig to set defaults, then select our package
+          make defconfig
+          
+          # Force select bandix
+          # sed -i 's/# CONFIG_PACKAGE_bandix is not set/CONFIG_PACKAGE_bandix=m/' .config
+          # Better way: using scripts/config if available, or just rely on make compile finding it
+          
+          echo "Compiling bandix..."
+          # V=s for verbose output to debug rust issues
+          # -j$(nproc) to speed up compilation
+          make package/openwrt-bandix/compile V=s -j$(nproc) || make package/openwrt-bandix/compile V=s
+
+      - name: Find Artifacts
+        id: find_ipk
+        run: |
+          # Locate the .ipk file
+          find sdk/bin/packages -name "bandix*.ipk" -type f
+          IPK_PATH=$(find sdk/bin/packages -name "bandix*.ipk" -type f | head -n 1)
+          echo "artifact_path=$IPK_PATH" >> $GITHUB_OUTPUT
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        if: steps.find_ipk.outputs.artifact_path != ''
+        with:
+          name: bandix-${{ matrix.arch }}-${{ github.sha }}
+          path: ${{ steps.find_ipk.outputs.artifact_path }}

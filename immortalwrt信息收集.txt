@@ -1,0 +1,247 @@
+
+ ImmortalWrt 24.10.4, r33602-e717d133ed6d
+ -----------------------------------------------------
+root@ImmortalWrt:~# ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel master br-lan state UP qlen 1000
+    link/ether bc:24:11:e4:11:25 brd ff:ff:ff:ff:ff:ff
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP qlen 1000
+    link/ether 00:e0:4c:d0:36:ae brd ff:ff:ff:ff:ff:ff
+    inet6 fe80::2e0:4cff:fed0:36ae/64 scope link
+       valid_lft forever preferred_lft forever
+4: br-lan: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+    link/ether bc:24:11:e4:11:25 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.1.1/24 brd 192.168.1.255 scope global br-lan
+       valid_lft forever preferred_lft forever
+    inet6 2409:8a55:5087:c550::1/60 scope global dynamic noprefixroute
+       valid_lft 181758sec preferred_lft 95358sec
+    inet6 fe80::be24:11ff:fee4:1125/64 scope link
+       valid_lft forever preferred_lft forever
+5: sb_tun: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UNKNOWN qlen 500
+    link/[65534]
+    inet 10.0.85.1/30 brd 10.0.85.3 scope global sb_tun
+       valid_lft forever preferred_lft forever
+    inet6 fdfe:dcba:9876::1/126 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::936:9223:73a2:4cb3/64 scope link flags 800
+       valid_lft forever preferred_lft forever
+6: pppoe-wan: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1492 qdisc fq_codel state UNKNOWN qlen 3
+    link/ppp
+    inet 172.19.246.71 peer 172.19.0.1/32 scope global pppoe-wan
+       valid_lft forever preferred_lft forever
+    inet6 2409:8a55:5008:cc1e:1517:7c6e:2343:cff/64 scope global dynamic noprefixroute
+       valid_lft 85885sec preferred_lft 3085sec
+    inet6 fe80::1517:7c6e:2343:cff/128 scope link flags 02
+       valid_lft forever preferred_lft forever
+root@ImmortalWrt:~# ip route
+default via 172.19.0.1 dev pppoe-wan
+10.0.85.0/30 dev sb_tun scope link  src 10.0.85.1
+100.102.163.0/24 via 192.168.1.25 dev br-lan  metric 1
+172.19.0.1 dev pppoe-wan scope link  src 172.19.246.71
+192.168.1.0/24 dev br-lan scope link  src 192.168.1.1
+192.168.2.0/24 via 192.168.1.25 dev br-lan  metric 1
+root@ImmortalWrt:~# brctl show
+bridge name     bridge id               STP enabled     interfaces
+br-lan          7fff.bc2411e41125       no              eth0
+root@ImmortalWrt:~#  cat /etc/config/bandix
+
+config bandix 'general'
+        option iface 'br-lan'
+        option port '8686'
+        option data_dir '/usr/share/bandix'
+        option language 'auto'
+        option theme 'auto'
+        option log_level 'info'
+
+config bandix 'traffic'
+        option enabled '1'
+        option speed_unit 'bytes'
+        option offline_timeout '120'
+        option traffic_retention_seconds '600'
+        option traffic_persist_interval_seconds '600'
+        option traffic_persist_history '1'
+        option traffic_flush_interval_seconds '600'
+
+config bandix 'connections'
+        option enabled '1'
+
+config bandix 'dns'
+        option enabled '0'
+        option dns_max_records '10000'
+
+root@ImmortalWrt:~# ip route show table all | grep default
+default via 172.19.0.1 dev pppoe-wan
+default via fdfe:dcba:9876::2 dev sb_tun table 2022  metric 1024
+default from 2409:8a55:5008:cc1e::/64 via fe80::12e8:78ff:fe66:6351 dev pppoe-wan  metric 512
+default from 2409:8a55:5087:c550::/60 via fe80::12e8:78ff:fe66:6351 dev pppoe-wan  metric 512
+root@ImmortalWrt:~# cat /etc/hotplug.d/
+block/  dhcp/   iface/  leds/   neigh/  net/    ntp/    tftp/
+root@ImmortalWrt:~# cat /etc/hotplug.d/ne
+neigh/  net/
+root@ImmortalWrt:~# cat /etc/hotplug.d/ne
+neigh/  net/
+root@ImmortalWrt:~# cat /etc/hotplug.d/net/
+00-sysctl             99-singbox-mac-proxy
+root@ImmortalWrt:~# cat /etc/hotplug.d/net/99-singbox-mac-proxy
+#!/bin/sh
+# /etc/hotplug.d/net/99-singbox-mac-proxy
+# 只在 "sb_tun" 接口被 "add" 时运行
+if [ "$ACTION" != "add" ] || [ "$INTERFACE" != "sb_tun" ]; then
+    exit 0
+fi
+
+# 轮询等待链出现
+RETRY_COUNT=15
+CHAINS_EXIST=0
+while [ $RETRY_COUNT -gt 0 ]; do
+    sleep 1
+    if nft list chain inet sing-box prerouting >/dev/null 2>&1 && \
+       nft list chain inet sing-box prerouting_udp_icmp >/dev/null 2>&1; then
+        CHAINS_EXIST=1
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT - 1))
+done
+
+if [ $CHAINS_EXIST -eq 0 ]; then
+    echo "[$(date)] chains not found after 15s" >> /tmp/sing-box-hotplug.log
+    exit 1
+fi
+
+
+
+
+# 1. Xray 防回环逻辑 (核心优化部分)
+# ==========================================
+# 定义要插入的规则内容
+# 对应上一条回答：Xray 运行在 GID 300
+RULE_GID="meta skgid 300 counter accept"
+# 对应 Xray 配置 sockopt mark 255 (双重保险)
+RULE_MARK="meta mark 255 counter accept"
+# 检查并插入 GID 规则 (防止重复)
+# grep -q 用于静默检查规则是否已存在
+if ! nft list chain inet sing-box output | grep -q "skgid 300"; then
+    nft insert rule inet sing-box output $RULE_GID
+    echo "[$(date)] Inserted anti-loop rule: GID 300" >> "$LOG_FILE"
+else
+    echo "[$(date)] Anti-loop rule (GID 300) already exists." >> "$LOG_FILE"
+fi
+# 检查并插入 Mark 规则 (防止重复)
+if ! nft list chain inet sing-box output | grep -q "mark 255"; then
+    nft insert rule inet sing-box output $RULE_MARK
+    echo "[$(date)] Inserted anti-loop rule: Mark 255" >> "$LOG_FILE"
+fi
+# ==========================================
+
+
+
+
+
+# === 定义需要走代理的 MAC 地址 （白名单模式）===
+MAC_FILE="/etc/sing-box/proxy-macs.conf"
+if [ -f "$MAC_FILE" ]; then
+    #增加小写转换
+    MACS=$(awk '!/^#/ && NF {macs=macs (macs?", ":"") tolower($1)} END {print macs}' "$MAC_FILE")
+    PROXY_MACS="{ $MACS }"
+    #echo "[$(date)] Loaded MACs from config: $PROXY_MACS" >> /tmp/sing-box-hotplug.log
+else
+    PROXY_MACS="{ 40:8d:5c:58:55:4f, bc:24:11:37:fa:70, 5a:34:3a:e1:d7:de }"
+    #echo "[$(date)] Config file not found, using defaults" >> /tmp/sing-box-hotplug.log
+fi
+# === 定义结束 ===
+
+
+# 1. 创建 MAC 集合
+nft add set inet sing-box proxy_mac_set { type ether_addr\; } 2>/dev/null
+nft flush set inet sing-box proxy_mac_set
+nft add element inet sing-box proxy_mac_set $PROXY_MACS
+
+# 2. 创建规则链
+nft add chain inet sing-box mac_proxy_chain 2>/dev/null
+nft flush chain inet sing-box mac_proxy_chain
+
+# 【核心逻辑】
+# - 白名单内的 MAC：return（继续执行后续 sing-box 规则，进入代理）
+# - 其他设备：accept（直接放行，绕过 sing-box）
+nft add rule inet sing-box mac_proxy_chain ether saddr @proxy_mac_set return
+nft add rule inet sing-box mac_proxy_chain counter accept
+
+# 3. 插入跳转规则（必须在 prerouting 链最前面）
+LIST_PREROUTING=$(nft list chain inet sing-box prerouting 2>/dev/null)
+if [ -n "$LIST_PREROUTING" ] && ! echo "$LIST_PREROUTING" | grep -q "jump mac_proxy_chain"; then
+    nft insert rule inet sing-box prerouting jump mac_proxy_chain
+fi
+
+LIST_PREROUTING_UDP=$(nft list chain inet sing-box prerouting_udp_icmp 2>/dev/null)
+if [ -n "$LIST_PREROUTING_UDP" ] && ! echo "$LIST_PREROUTING_UDP" | grep -q "jump mac_proxy_chain"; then
+    nft insert rule inet sing-box prerouting_udp_icmp jump mac_proxy_chain
+fi
+
+echo "[$(date)] Proxy rules inserted successfully" >> /tmp/sing-box-hotplug.log
+exit 0
+root@ImmortalWrt:~#
+
+
+
+singbox inbound配置
+    "inbounds": [
+        {
+            "tag": "tun-in",
+            "type": "tun",
+            "interface_name": "sb_tun",
+            "address": [
+                "10.0.85.1/30",
+                "fdfe:dcba:9876::1/126"
+            ],
+            "mtu": 1500,
+            "auto_route": true,
+            "strict_route": false,
+            "route_exclude_address": [
+                "192.168.2.0/24",
+                "100.102.163.115/24"
+            ],
+            "auto_redirect": true,
+            "auto_redirect_input_mark": "0x2023",
+            "auto_redirect_output_mark": "0x2024",
+            "route_exclude_address_set": "geoip-cn"
+        },
+        {
+            "tag": "mixed-in",
+            "type": "mixed",
+            "listen": "0.0.0.0",
+            "listen_port": 7893,
+            "users": [
+                {
+                    "username": "user-r",
+                    "password": "123456"
+                },
+                {
+                    "username": "user-p",
+                    "password": "123456"
+                },
+                {
+                    "username": "user-d",
+                    "password": "123456"
+                },
+                {
+                    "username": "frpc",
+                    "password": "123456"
+                },
+                {
+                    "username": "ipad",
+                    "password": "123456"
+                }                                
+            ]
+        },
+        {
+            "tag": "mixed-in2",
+            "type": "mixed",
+            "listen": "0.0.0.0",
+            "listen_port": 7894,
+        }        
+    ],
