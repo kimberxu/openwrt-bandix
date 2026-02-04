@@ -14,6 +14,8 @@ PKG_MIRROR_HASH:=skip
 
 PKG_BUILD_DEPENDS:=rust/host
 
+CARGO_SRC_DIR:=bandix
+
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
 
