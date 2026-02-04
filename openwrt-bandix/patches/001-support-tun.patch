@@ -12,7 +12,7 @@
      match result {
 --- a/bandix-ebpf/src/modules/traffic/mod.rs
 +++ b/bandix-ebpf/src/modules/traffic/mod.rs
-@@ -20,11 +20,18 @@ use maps::{MAC_RATE_LIMITS, MAC_TRAFFIC, RATE_BUCKETS};
+@@ -20,40 +23,63 @@ use maps::{MAC_RATE_LIMITS, MAC_TRAFFIC, RATE_BUCKETS};
  
  #[inline(always)]
  pub fn handle_traffic_ingress(ctx: &TcContext) -> Result<i32, ()> {
@@ -85,7 +85,7 @@
      let data_len = unsafe { u16::from_be_bytes((*ipv4hdr).tot_len) } as u64;
  
      // IP 地址
-@@ -107,11 +129,13 @@ fn is_subnet_configured() -> bool {
+@@ -107,12 +133,15 @@ fn is_subnet_configured() -> bool {
  // ============================================================================
  
  #[inline(always)]
@@ -108,7 +108,7 @@
      let payload_len = unsafe { u16::from_be_bytes((*ipv6hdr).payload_len) } as u64;
 --- a/bandix/src/command.rs
 +++ b/bandix/src/command.rs
-@@ -34,6 +34,9 @@ pub struct CommonArgs {
+@@ -34,4 +34,7 @@ pub struct CommonArgs {
          help = "Log level: trace, debug, info, warn, error (default: info). Web and DNS logs are always at DEBUG level."
      )]
      pub log_level: String,
@@ -118,7 +118,7 @@
  }
  
  /// 流量模块参数
-@@ -299,6 +302,15 @@ async fn create_module_contexts(
+@@ -299,6 +302,16 @@ async fn create_module_contexts(
      let shared_ebpf = if options.enable_traffic() || options.enable_dns() {
          log::info!("Loading shared eBPF programs (ingress and egress)...");
          let mut ebpf = init_shared_ebpf(options).await?;
