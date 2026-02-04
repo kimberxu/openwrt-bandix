@@ -15,7 +15,7 @@ PKG_MIRROR_HASH:=skip
 PKG_BUILD_DEPENDS:=rust/host
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/rust/cargo.mk
+include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
 
 define Package/$(PKG_NAME)
 	SECTION:=net
