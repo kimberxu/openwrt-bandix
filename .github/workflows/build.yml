@@ -45,7 +45,12 @@ jobs:
           # Install rust packages support (lang/rust) explicitly to ensure cargo.mk is available
           ./scripts/feeds install rust
           ./scripts/feeds install -a
-          sed -i "s/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/" feeds/packages/lang/rust/Makefile
+          # Disable Rust CI LLVM download to fix 404 error
+          if [ -f "feeds/packages/lang/rust/Makefile" ]; then
+            sed -i "s/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/" feeds/packages/lang/rust/Makefile
+            # Speed up build by only building X86 target (skips AMDGPU, NVPTX, etc.)
+            sed -i '/download-ci-llvm/a \\t\techo "targets = \\"X86\\"" >> $(PKG_BUILD_DIR)/config.toml' feeds/packages/lang/rust/Makefile
+          fi
           
       - name: Prepare Package
         run: |
