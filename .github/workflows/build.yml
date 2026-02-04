@@ -45,6 +45,7 @@ jobs:
           # Install rust packages support (lang/rust) explicitly to ensure cargo.mk is available
           ./scripts/feeds install rust
           ./scripts/feeds install -a
+          sed -i "s/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/" feeds/packages/lang/rust/Makefile
           
       - name: Prepare Package
         run: |
